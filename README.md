@@ -1,6 +1,6 @@
 # The Dungeons of Dork
 ***UNDER DEVELOPMENT***
-This game was originally written in ManyChat (a chatbot platform,) and this is the Python port, enhanced using object orientation etc.
+This game was originally written as a ManyChat chatbot, and this is the object oriented Python port.
 
 ### Variables
 
