@@ -1,7 +1,6 @@
 # The Dungeons of Dork
 ***UNDER DEVELOPMENT***
-
-Text-based role playing game. Python Edition.
+This game was originally written in ManyChat (a chatbot platform,) and this is the Python port, enhanced using object orientation etc.
 
 ### Variables
 
