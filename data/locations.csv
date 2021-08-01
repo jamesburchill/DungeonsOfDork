@@ -1,4 +1,4 @@
-LOCID,N,S,W,E,IsDark?,Story,Description,OBJID,NPCID
+LOC_ID,LOC_N,LOC_S,LOC_W,LOC_E,LOC_IS_DARK,LOC_STORY,LOC_DESC,LOC_OBJ_ID,LOC_NPC_ID
 1,,11,,,,You're in a small room with stone walls. There's nothing else in the room but you.,It's a small room. Nothing notable to describe.,,
 2,,,,,,,,,
 3,,,,,,,,,
