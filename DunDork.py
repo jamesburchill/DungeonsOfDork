@@ -2,10 +2,10 @@
     Copyright 2021 (c) JamesBurchil.com
     """
 
-# Import required modules
-from typing import List
-
 import pandas as pd
+
+GAMEOVER = False
+TESTMODE = True  # used to print out stuff during dev/testing ...
 
 class Location:
     """Locations in the DOD game"""
@@ -48,19 +48,28 @@ class Object:
 
 class NPC:
     """Non Player Characters"""
-    def __init__(self):
-        self.ID = 0
-        self.Name = ''
-        self.Desc = ''
-        self.ObjectID = 0 #Kryptonite to this NPC
-        self.CanMove = False
-        self.StartLocationID = 0
-        self.CurrentLocationID = 0
+    def __init__(self,n):
+        self.ID = n["NPC_ID"]
+        self.Name = n["NPC_NAME"]
+        self.Desc = n["NPC_DESC"]
+        self.ObjectID = n["NPC_OBJID"] #Kryptonite to this NPC
+        self.CanMove = n["NPC_CAN_MOVE"]
+        self.StartLocationID = n["NPC_START_LOC_ID"]
+        self.CurrentLocationID = n["NPC_CURRENT_LOC_ID"]
+
+class Genloc:
+    """Arbitrary text for the game locations"""
+    def __init__(self,gl):
+        self.ID = gl["GEN_LOC_ID"]
+        self.Story = gl["GEN_STORY"]
+        self.Desc = gl["GEN_DESC"]
 
 class Backpack:
     """The player's backpack, admittedly there's ONLY ONE per game"""
-    def __init__(self):
-        self.storageSpace = [0, 0, 0, 0, 0]
+    def __init__(self,s=5):
+        self.space = []
+        for i in range(s):
+            self.space.append('')
 
     def CheckInventory(self):
         pass
@@ -82,7 +91,7 @@ def loadLocations(LocFname):
     except:
         raise Exception("Cannot open locations file within data folder.")
     try:
-        loclist: list[Location] = []     # set up an empty object list
+        loclist = []     # set up an empty object list
         for i, r in locations.iterrows():
             loclist.append(Location(r))  #create a NEW location, append to list
     except:
@@ -96,11 +105,12 @@ def loadObjects(ObjFname):
     except:
         raise Exception("Cannot open objects file within data folder.")
     try:
-        # set up object list
-        for o in objects:
-            pass
+        objlist = []
+        for i, o in objects.iterrows():
+            objlist.append(Object(o))   #create a NEW object, append to list
     except:
         raise Exception("Cannot create OBJECT list.")
+    return objlist
 
 def loadNPCs(NpcFname):
     """Load NPCs from CSV file and iterate through to create class objects"""
@@ -109,10 +119,12 @@ def loadNPCs(NpcFname):
     except:
         raise Exception("Cannot open npcs file within data folder.")
     try:
-        for x in npcs:
-            pass
+        npclist = []
+        for i, n in npcs.iterrows():
+            npclist.append(NPC(n))      #create a NEW npc, append to list
     except:
         raise Exception("ERROR: Cannot create NPC list.")
+    return npclist
 
 def loadGenlocs(GenFname):
     """Load GenLocs from CSV file and iterate through to create class objects"""
@@ -121,40 +133,58 @@ def loadGenlocs(GenFname):
     except:
         raise Exception("Cannot open genlocs file within data folder.")
     try:
-        for gl in genlocs:
-            pass
+        genloclist = []
+        for i, gl in genlocs.iterrows():
+            genloclist.append(Genloc(gl))
     except:
-        raise Exception("ERROR: Cannot create GENLOC list.")
+        raise Exception("Cannot create GENLOC list.")
+    return genloclist
 
 def move():
     """Move the player"""
     pass
 
+def main_loop():
+    while not GAMEOVER:
+        #Get user input
+        response = input("What now?")
+        if response == 'Q':
+            break
+        elif response == 'q':
+            break
+        elif response =='quit':
+            break
+        elif response == 'Quit':
+            break
+        elif response == 'QUIT':
+            break
+        pass
+
 def runGame():
     """Run the game if run as standalone program"""
 
-    LocFname = 'data/location.csv'
+    LocFname = 'data/locations.csv'
     ObjFname = 'data/objects.csv'
     NpcFname = 'data/npcs.csv'
     GenFname = 'data/genlocs.csv'
 
-    location = loadLocations(LocFname)
-    print(location[0].ID)  #how to access the location's value(s) by field
+    location = loadLocations(LocFname)      #Load locations and create list
+    object = loadObjects(ObjFname)          #Load objects and create list
+    npc = loadNPCs(NpcFname)                #Load npc's and create list
+    genloc = loadGenlocs(GenFname)          #Load genloc text and create list
+    backpack = Backpack()                   #Create a backpack with 5 spaces (unless specified)
 
-    object = loadObjects(ObjFname)
-    print(object[0].ID)
+    showInstructions()                      #Display game rules
 
-    npc = loadNPCs(NpcFname)
-    print(npc[0].ID)
+    if TESTMODE:
+        #DUMMY TEST STUFF
+        print(object[0].Desc)
+        print(npc[0].Desc)
+        print(genloc[0].Desc)
+        print(location[0].Desc)  #how to access the location's value(s) by field
+        print('backpack has ' + str(len(backpack.space)) + ' spaces')
 
-    genloc = loadGenlocs(GenFname)
-    print(genloc[0].ID)
-
-    backpack = Backpack()
-    print(backpack.storageSpace)
-
-    showInstructions()
-
+    main_loop() #loop until GAME_OVER is True
 
 # --------------------------------------------------------------------
 # Call runGame() to get this party started!
