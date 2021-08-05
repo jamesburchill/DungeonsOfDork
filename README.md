@@ -3,5 +3,7 @@
 
 This game was originally written as a ManyChat chatbot, and this is the object oriented Python port.
 
-¯\_(ツ)_/¯
+The chatbot edition of DoD was/is available here: https://manychat.com/l13/jamescburchill ** Not active ATM
+
+JB (ツ)
 
