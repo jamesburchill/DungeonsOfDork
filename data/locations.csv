@@ -88,7 +88,7 @@ LOC_ID,LOC_N,LOC_S,LOC_W,LOC_E,LOC_IS_DARK,LOC_STORY,LOC_DESC,LOC_OBJ_ID,LOC_NPC
 87,,,,,,,,,
 88,,98,,89,,,,,
 89,79,,88,90,,,,,
-90,,,89,,,,,,
+90,,,89,,,"You've made it! You found the exit, congratulations!!!",You found the exit. Congratulations.,,
 91,,,,,,,,,
 92,82,,,93,,,,,
 93,,,92,,,,,,

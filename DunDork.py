@@ -1,67 +1,276 @@
 """ This is the MAIN file for Dungeons of Dork (Python Edition.)
     Copyright 2021 (c) JamesBurchill.com
 """
-import pandas
-import pandas as pd
+import random
+from pandas import read_csv, isna
 
-TEST_MODE = True  # used to print out stuff during dev/testing ...
-current_loc = 0
+
+class Player:
+    """ The main protagonist in our game"""
+
+    def __init__(self, loc_list, obj_list, npc_list):
+        self.backpack = [0, 0, 0, 0, 0]  # 5 storage spaces in the backpack
+        self.current_loc = 1  # set to 1 to account for zero-offset indexing
+        self.health = 100  # number of health points to lose before player dies!
+        self.game_over = False  # play game until True
+        self.locs = loc_list  # all the locations in the game
+        self.objs = obj_list  # all the objects in the game
+        self.npcs = npc_list  # all the npcs in the game
+        self.new_location = True
+        self.instructions = "---------------------------------------------------------------------------------- \n" \
+            "The object of the game is simple ... escape the 'Dungeons of Dork!'\n" \
+            "You may encounter monsters along your journey and you may find objects too.\n" \
+            "In each situation you will need to decide what to do. Here are your controls:\n" \
+            "Move using 'N','S','E','W'. 'M' lists available moves. Look around with 'L'. \n" \
+            "Exit the game with 'Q'. Pickup items with 'U', drop them with 'D' \n" \
+            "and finally, itemize your backpack with 'I'. Good luck! \n" \
+            "----------------------------------------------------------------------------------"
+        self.valid_command = True
+        self.told_story = False
+        self.debug_mode = True  # change to False when ready :)
+
+        self.show_instructions()  # show game instructions at start
+
+    def play_game(self):  # main game loop
+        if self.new_location:
+            if self.current_loc == 90:  # winning location ID in map.
+                self.found_exit()
+            else:
+                self.report_location_status()
+        else:
+            self.valid_command = self.get_user_input()
+        return self.game_over
+
+    def report_location_status(self):
+        self.look_around()
+        self.list_directions()
+        self.list_objects()
+        self.list_npcs()
+
+    def found_exit(self):
+        """A simple 'You Won' message and an exit from the game loop"""
+        self.game_over = True
+        print("Congratulations, you have escaped the Dungeons of Dork!")
+        return self.game_over
+
+    def move(self, direction):
+        self.told_story = False     # Reset told_story for THIS location
+        self.new_location = True
+        if direction == 'N':  # go north
+            # if the current location obj N is not null
+            if locs[self.current_loc - 1].N != 0:
+                self.current_loc = locs[self.current_loc - 1].N
+                self.report_location_status()
+                return True
+            else:
+                print("You cannot go North. Try again.")
+                return False
+        elif direction == 'S':  # go south
+            if locs[self.current_loc - 1].S != 0:
+                self.current_loc = locs[self.current_loc - 1].S
+                self.report_location_status()
+                return True
+            else:
+                print("You cannot go south. Try again.")
+                return False
+        elif direction == 'E':  # go east
+            if locs[self.current_loc - 1].E != 0:
+                self.current_loc = locs[self.current_loc - 1].E
+                self.report_location_status()
+                return True
+            else:
+                print("You cannot go East. Try again.")
+                return False
+        elif direction == 'W':  # go west
+            if locs[self.current_loc - 1].W != 0:
+                self.current_loc = locs[self.current_loc - 1].W
+                self.report_location_status()
+                return True
+            else:
+                print("You cannot go West. Try again.")
+                return False
+
+    def look_around(self):
+        self.new_location = False
+        if self.told_story:
+            print(self.locs[self.current_loc - 1].Desc)
+            self.told_story = True
+            return self.told_story
+        else:
+            print(self.locs[self.current_loc - 1].Story)
+            self.told_story = True
+            return self.told_story
+
+    def list_directions(self):
+        directions = []
+        if self.locs[self.current_loc - 1].N != 0:
+            directions.append("N")
+        if self.locs[self.current_loc - 1].S != 0:
+            directions.append("S")
+        if self.locs[self.current_loc - 1].E != 0:
+            directions.append("E")
+        if self.locs[self.current_loc - 1].W != 0:
+            directions.append("W")
+        print("You may go", directions)
+        return True
+
+    def drop_object(self):
+        valid_choices = "0123456789"
+        for i, o in enumerate(self.backpack):
+            if not isinstance(o, int):
+                print("[", i, "] ", o.Name)
+        drop = input("Which object do you wish to drop? Type its number > ")
+        if (drop in valid_choices) and (int(drop) <= len(self.backpack)):
+            if isinstance(self.backpack[int(drop)], int):        # check that they're picking an actual object!
+                print("Please choose a valid object number. Try again.")
+                return False
+            else:
+                prompt = "You have chosen to drop the " + self.backpack[int(drop)].Name + ". Are you sure? Y/N > "
+                if input(prompt).upper()[0] == "Y":
+                    print("You take the " + self.backpack[int(drop)].Name + " and drop it.")
+                    self.locs[self.current_loc - 1].ObjectID = self.backpack[int(drop)].ID   # drop objid into loc objid
+                    self.backpack[int(drop)] = 0     # empty backpack space (remove obj reference)
+                    return True
+                else:
+                    # do NOT drop, just exit
+                    return False
+        print("Please choose a valid object number. Try again.")
+        return False
+
+    def pickup_object(self):  # tbc
+        if self.locs[self.current_loc - 1].ObjectID > 0:    # There's an OBJ at this location
+            # Now figure out if there's space in the backpack
+            space, x = self.backpack_has_space()
+            if space:  # x == location in backpack
+                # Get ObjectID from adjusted current locaction
+                oid = self.locs[self.current_loc - 1].ObjectID
+                # Adjust oid for index offset
+                oid = oid - 1
+                self.backpack[x] = self.objs[oid]
+                print("You pickup the", self.objs[oid].Name, "and stow it in your backpack.")
+                self.locs[self.current_loc - 1].ObjectID = 0  # erase object from current location
+                return True
+        else:
+            return False
+
+    def backpack_has_space(self):  # tbc
+        """Ensure there's space in the backpack"""
+        for i, space in enumerate(self.backpack):
+            if isinstance(space, int):  # then there's no object there
+                return True, i  # index of free space
+        return False, -1  # 0 means NO free spaces!
+
+    def look_in_backpack(self):
+        """List what's in the backpack"""
+        collected = []
+        for item in self.backpack:
+            if not isinstance(item, int):
+                collected.append(item.Desc)
+        if len(collected) > 0:
+            print("You have ", collected, " in your backpack.")
+            return True
+        else:
+            return False
+
+    def get_user_input(self):
+        # Get user input
+        i = input("What now? > ")
+        if i:  # check to ensure NOT empty!
+            r = i.upper()[0]  # upper 1st char
+            if r == "Q":
+                if input("Are you sure? > ").upper()[0] == "Y":
+                    return self.quit_game()
+            elif r == 'I':  # list inventory
+                return self.look_in_backpack()
+            elif r == 'U':  # pickup item
+                return self.pickup_object()
+            elif r == 'D':  # drop item
+                return self.drop_object()
+            elif r == 'L':  # look around
+                return self.report_location_status()
+            elif r == 'H':  # help!
+                return self.show_instructions()
+            elif r == "N" or r == "S" or r == "E" or r == "W":
+                return self.move(r)
+            elif r == 'M':  # Direction choices
+                return self.list_directions()
+            else:
+                print("Sorry I don't understand that instruction. Try again. Press 'H' for help.")
+                return False
+        else:
+            return False
+
+    def quit_game(self):
+        self.game_over = True
+        return True
+
+    def show_instructions(self):
+        """Show Instructions How To Play"""
+        print(self.instructions)
+        return True
+
+    def list_objects(self):
+        if self.locs[self.current_loc - 1].ObjectID > 0:
+            # Get ObjectID from adjusted current locaction
+            oid = self.locs[self.current_loc - 1].ObjectID
+            # Adjust oid for index offset
+            oid = oid - 1
+            print("There is ", self.objs[oid].Desc, " here.")
+
+    def list_npcs(self):
+        if self.locs[self.current_loc - 1].NpcID > 0:
+            print("There is ", self.npcs[self.locs[self.current_loc - 1].NpcID].Desc, " here.")
+        '''I have not yet programmed the NPC logic. Monster NPCs will either do something bad (if you don't have 
+        their equivalent kryptonite object in your backpack, or if you do, they will run away or some such thing.
+        If you don't have their nullifying object in your posession, you might lose another object, get transported
+        to some random location in the game and so on. It's currently up to you! Have fun.'''
 
 
 class Location:
     """Locations in the DOD game"""
 
-    def __init__(self, loc):
-        if pandas.isna(loc["LOC_ID"]):
+    def __init__(self, loc, gen_text):
+        rint = random.randint(0, len(gen_text) - 1)
+        if isna(loc["LOC_ID"]):
             self.ID = 0
         else:
             self.ID = int(loc["LOC_ID"])
-        if pandas.isna(loc["LOC_N"]):
-            self.N =  0
+        if isna(loc["LOC_N"]):
+            self.N = 0
         else:
             self.N = int(loc["LOC_N"])
-        if pandas.isna(loc["LOC_S"]):
-            self.S =  0
+        if isna(loc["LOC_S"]):
+            self.S = 0
         else:
             self.S = int(loc["LOC_S"])
-        if pandas.isna(loc["LOC_W"]):
-            self.W =  0
+        if isna(loc["LOC_W"]):
+            self.W = 0
         else:
             self.W = int(loc["LOC_W"])
-        if pandas.isna(loc["LOC_E"]):
-            self.E =  0
+        if isna(loc["LOC_E"]):
+            self.E = 0
         else:
             self.E = int(loc["LOC_E"])
-        if pandas.isna(loc["LOC_IS_DARK"]):
-            self.IsDark =  0
+        if isna(loc["LOC_IS_DARK"]):
+            self.IsDark = 0
         else:
             self.IsDark = loc["LOC_IS-DARK"]
-        if pandas.isna(loc["LOC_STORY"]):
-            self.Story =  ""
+        if isna(loc["LOC_STORY"]):
+            self.Story = gen_text[rint].Story
         else:
             self.Story = loc["LOC_STORY"]
-        if pandas.isna(loc["LOC_DESC"]):
-            self.Desc = ""
+        if isna(loc["LOC_DESC"]):
+            self.Desc = gen_text[rint].Desc
         else:
             self.Desc = loc["LOC_DESC"]
-        if pandas.isna(loc["LOC_OBJ_ID"]):
+        if isna(loc["LOC_OBJ_ID"]):
             self.ObjectID = 0
         else:
-            self.ObjectID = loc["LOC_OBJ_ID"]
-        if pandas.isna(loc["LOC_NPC_ID"]):
+            self.ObjectID = int(loc["LOC_OBJ_ID"])
+        if isna(loc["LOC_NPC_ID"]):
             self.NpcID = 0
         else:
-            self.NpcID = loc["LOC_NPC_ID"]
-
-
-    def location_details(self, loc):
-        ...
-
-    def direction_choices(self, loc):
-        ...
-
-    def objects_in_location(self, loc):
-        ...
+            self.NpcID = int(loc["LOC_NPC_ID"])
 
 
 class Object:
@@ -73,7 +282,6 @@ class Object:
         self.Name = obj["OBJ_NAME"]
         self.Story = obj["OBJ_NARRATIVE"]  # Narrative when collected
         self.RequiredToWin = obj["OBJ_WIN"]
-        self.inBackPack = False
 
 
 class NPC:
@@ -98,48 +306,25 @@ class Genloc:
         self.Desc = gl["GEN_DESC"]
 
 
-def spaces_available(backpack):
-    """Ensure there's space in the backpack"""
-    ...
-
-
-def inventory_list(backpack):
-    ...
-
-
-def object_collected(object_id):
-    ...
-
-
-def object_dropped(object_id):
-    ...
-# End of backpack functions
-
-
-def game_instructions():
-    """Show Instructions How To Play"""
-    ...
-
-
-def locations_from_file(loc_fname):
+def locations_from_file(fname, g):
     """Load Locations from CSV file and iterate through to create class objects"""
     try:
-        locations = pd.read_csv(loc_fname)
+        locations = read_csv(fname)
     except FileNotFoundError:
         raise Exception("Cannot open locations file within data folder.")
     try:
         loclist = []  # set up an empty object list
         for i, r in locations.iterrows():
-            loclist.append(Location(r))  # create a NEW location, append to list
+            loclist.append(Location(r, g))  # create a NEW location, append to list
     except FileNotFoundError:
         raise Exception("Cannot create LOCATION list.")
     return loclist
 
 
-def objects_from_file(obj_fname):
+def objects_from_file(fname):
     """Load Objects from CSV file and iterate through to create class objects"""
     try:
-        objects = pd.read_csv(obj_fname)
+        objects = read_csv(fname)
     except FileNotFoundError:
         raise Exception("Cannot open objects file within data folder.")
     try:
@@ -151,168 +336,52 @@ def objects_from_file(obj_fname):
     return objlist
 
 
-def npcs_from_file(npc_fname):
+def npcs_from_file(fname):
     """Load NPCs from CSV file and iterate through to create class objects"""
     try:
-        npcs = pd.read_csv(npc_fname)
+        _npcs = read_csv(fname)
     except FileNotFoundError:
-        raise Exception("Cannot open npcs file within data folder.")
+        raise Exception("Cannot open _npcs file within data folder.")
     try:
         npclist = []
-        for i, n in npcs.iterrows():
+        for i, n in _npcs.iterrows():
             npclist.append(NPC(n))  # create a NEW npc, append to list
-    except:
+    except ValueError:
         raise Exception("ERROR: Cannot create NPC list.")
     return npclist
 
 
-def genlocs_from_file(gen_fname):
+def genlocs_from_file(file):
     """Load GenLocs from CSV file and iterate through to create class objects"""
     try:
-        genlocs = pd.read_csv(gen_fname)
+        genlocs = read_csv(file)
     except FileNotFoundError:
-        raise Exception("Cannot open genlocs file within data folder.")
+        raise Exception("Cannot open gens file within data folder.")
     try:
         genloclist = []
         for i, gl in genlocs.iterrows():
             genloclist.append(Genloc(gl))
-    except:
+    except ValueError:
         raise Exception("Cannot create GENLOC list.")
     return genloclist
 
 
-def location_logic(loc):
-    for i in range(2):
-        print(" ")
-    print(loc.Story)
-    return True
-
-
-def object_logic(loc):
-    ...
-
-
-def npc_logic(loc):
-    ...
-
-
-def blank_lines(x):
-    for i in range(x):
-        print(" ")
-
-
-def user_logic(loc):
-    # Get user input
-    global current_loc
-    global TEST_MODE
-    blank_lines(2)
-    i = input("What now? ")
-    if i:   # check to ensure NOT empty!
-        r = i.upper()[0]  # take 1st char and UPPER it
-        if r == "Q":    # quit
-            if input("Are you sure? Y/N").upper()[0] == "Y":
-                blank_lines(2)
-                print("... GAME OVER ...")
-                return True
-            else:
-                return False
-        elif r == 'N':  # go north
-            # if the current location obj N is not null
-            if TEST_MODE: print(loc.N)
-            if loc.N != 0:
-                current_loc = loc.N
-                return False
-            else:
-                print("You cannot go North. Try again.")
-        elif r == 'S':  # go south
-            if TEST_MODE: print(loc.S)
-            if loc.S != 0:
-                current_loc = loc.S
-                return False
-            else:
-                print("You cannot go south. Try again.")
-            ...
-        elif r == 'E':  # go east
-            if TEST_MODE: print(loc.E)
-            if loc.E != 0:
-                current_loc = loc.E
-                return False
-            else:
-                print("You cannot go East. Try again.")
-            ...
-        elif r == 'W':  # go west
-            if TEST_MODE: print(loc.W)
-            if loc.W != 0:
-                current_loc = loc.W
-                return False
-            else:
-                print("You cannot go West. Try again.")
-            ...
-        elif r == 'I':  # list inventory
-            blank_lines(2)
-            ...
-        elif r == 'U':  # pickup item
-            blank_lines(2)
-            ...
-        elif r == 'D':  # drop item
-            blank_lines(2)
-            ...
-        elif r == 'L':  # look around
-            blank_lines(2)
-            print(loc.Desc)
-            return False
-        elif r == 'H':  # help!
-            blank_lines(2)
-            print("Your commands are as follows: Move using 'N','S','E','W'. Look around with 'L'. Exit the game with 'Q'. "
-                  "Pickup items with 'U', drop them with 'D' and list your backapack contents with 'I'.")
-            return False
-        else:
-            return False
-        return False
-    else:
-        return False
-
-
-def run_game():
+if __name__ == "__main__":
     """Run the game if run as standalone program"""
 
-    loc_fname = 'data/locations.csv'
-    obj_fname = 'data/objects.csv'
     npc_fname = 'data/npcs.csv'
     gen_fname = 'data/genlocs.csv'
+    obj_fname = 'data/objects.csv'
+    loc_fname = 'data/locations.csv'
 
-    backpack = [0, 0, 0, 0, 0]  # Create a backpack with 5 spaces to hold OBJ IDs
-    genlocs = genlocs_from_file(gen_fname)  # Load genloc text and create list of 'random' text
+    gens = genlocs_from_file(gen_fname)  # Load genloc text and create list of 'random' text
     npcs = npcs_from_file(npc_fname)  # Load npc's and create list
-    things = objects_from_file(obj_fname)  # Load objects and create list
-    locations = locations_from_file(loc_fname)  # Load locations and create list
+    objs = objects_from_file(obj_fname)  # Load objects and create list
+    locs = locations_from_file(loc_fname, gens)  # Load locations and create list, fill blanks with genlocs
 
-    game_instructions()     # Display game rules
+    player = Player(locs, objs, npcs)  # instantiate a new player, pass in ALL game lists
 
-    game_over = False
+    while not player.game_over:
+        player.play_game()
 
-
-    if TEST_MODE:
-        # DUMMY TEST STUFF
-        # print(things[current_loc].Desc)
-        # print(npcs[current_loc].Desc)
-        # print(genlocs[current_loc].Desc)
-        # print(locations[current_loc].Desc)  # how to access the locations's value(s) by field
-        # print('backpack has ' + str(len(backpack)) + ' spaces')
-        # print(locations[current_loc].ID,locations[current_loc].Desc)
-        if pandas.isna(locations[current_loc].N):
-            print("Empty value")
-        else:
-            print("Some value")
-
-    while not game_over:    # Main Game Loop
-        location_logic(locations[current_loc])
-        object_logic(locations[current_loc])
-        npc_logic(locations[current_loc])
-        game_over = user_logic(locations[current_loc])
-        print(" ")
-
-
-if __name__ == "__main__":
-    """Call runGame() to get this party started!"""
-    run_game()
+# THE END ¯\_(ツ)_/¯
