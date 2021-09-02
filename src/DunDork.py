@@ -369,10 +369,10 @@ def genlocs_from_file(file):
 if __name__ == "__main__":
     """Run the game if run as standalone program"""
 
-    npc_fname = 'data/npcs.csv'
-    gen_fname = 'data/genlocs.csv'
-    obj_fname = 'data/objects.csv'
-    loc_fname = 'data/locations.csv'
+    npc_fname = 'src/data/npcs.csv'
+    gen_fname = 'src/data/genlocs.csv'
+    obj_fname = 'src/data/objects.csv'
+    loc_fname = 'src/data/locations.csv'
 
     gens = genlocs_from_file(gen_fname)  # Load genloc text and create list of 'random' text
     npcs = npcs_from_file(npc_fname)  # Load npc's and create list
