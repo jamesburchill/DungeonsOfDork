@@ -115,6 +115,6 @@ Have fun, and as I'm fond of saying ... #StayFrosty :)
 
 James Burchill
 
-https://jcb.dev
+https://jamesburchill.com
 
 *PS. Remember to take a closer look at the map.png for a better understanding of the game layout.*
