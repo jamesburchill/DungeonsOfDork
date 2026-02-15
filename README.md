@@ -1,8 +1,27 @@
 # The Dungeons of Dork
 
-This game was originally written as a ManyChat chatbot as part of a training class I ran teaching how to code 'old-school' text-based RPG's. This is the object-oriented Python 3 port. I have provided the data files that provide the structure for the game and other elements in the /src/data directory.  
+This game was originally written as a ManyChat chatbot as part of a training class I ran teaching how to code 'old-school' text-based RPG's. This is the object-oriented Python 3 port. I have provided the data files that provide the structure for the game and other elements in the /src/data directory.
 
-The game uses Pandas to load the data and subsequently creates various lists of objects. The game runs and you can explore the map, pickup and drop objects, look about and more. The NPC logic has been stubbed out and you are welcome to read the code and create your own handlers. 
+The game loads data from CSV files and now includes a more complete CLI gameplay loop:
+
+- Required relic chain to unlock the exit (Amulet, Dagger, Book of Spells)
+- Patrol NPCs with door blocking and weakness-based encounters
+- Room tags and events (safe, trap, treasure, lore, dark)
+- Quest givers, XP, perks, and alternate endings
+- Short and full-text commands (`N`, `north`, `pickup torch`, `use amulet`, etc.)
+- Boss fight with telegraphed multi-phase attacks
+- Meta progression persisted in `src/data/meta.json` (class unlocks)
+- Random mutators each run (e.g. Fog of War, Ironman, Rich Vaults)
+- Item synergies (`use <item> with <item>`)
+- Faction reputation effects, timed hazards, secrets, class abilities, combat log, and map reveal
+
+Run from the repository root:
+
+`python3 src/DunDork.py`
+
+Run tests:
+
+`python3 -m pytest -q`
 
 The overall logic of the game is pretty straightforward:
 
