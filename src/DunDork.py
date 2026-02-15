@@ -10,7 +10,9 @@ import subprocess
 import shutil
 import threading
 import queue
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 try:
@@ -29,11 +31,13 @@ class DorkTkApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Dungeons of Dork - Tkinter")
-        self.root.geometry("980x680")
+        self.root.geometry("1260x820")
+        self.root.resizable(False, False)
+        self.root.configure(bg="#2b2218")
         self.command_queue: list[str] = []
         self.show_room_ids = False
         self.closing = False
-        self.map_x_offset = -12
+        self.map_x_offset = 0
         self.player_avatar = "🙂"
         self.emoji_theme = True
         self.voice_enabled = False
@@ -46,18 +50,49 @@ class DorkTkApp:
         self.base_dir = Path(__file__).resolve().parent
         self.data_dir = self.base_dir / "data"
         self.meta_path = self.data_dir / "meta.json"
+        self.save_path = self.data_dir / "savegame.json"
+        self.theme = {
+            "bg": "#2b2218",
+            "panel": "#d8ccb5",
+            "panel_alt": "#e2d8c5",
+            "text": "#2f2418",
+            "map_bg": "#3a2f23",
+            "line": "#dfd5c3",
+        }
+        self.ui_font = ("Palatino", 14)
+        self.title_font = ("Palatino", 21, "bold")
+        self.button_font = ("Palatino", 13, "bold")
+        self.mono_font = ("Courier New", 16)
 
+        self._center_window()
         self._build_ui()
         self.player = self._build_player()
         self.player.style["color"] = False
         self.player.style["typewriter"] = False
-        self.player_avatar = self._player_avatar_emoji(self.player.player_class)
+        self.player_avatar = self._default_avatar_emoji(self.player.player_class)
         self.root.protocol("WM_DELETE_WINDOW", self._shutdown)
 
         self.player.play_game()
         self.refresh_views()
 
+    def _center_window(self):
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
     def _build_player(self):
+        saved = self._read_save_slot()
+        if saved:
+            resume = messagebox.askyesno("Resume Run", "A saved run was found. Resume it?", parent=self.root)
+            if resume:
+                return self._build_player_from_save(saved)
+
+        return self._build_new_player()
+
+    def _build_new_player(self):
         meta = core.load_meta(self.meta_path)
         mutator = core.choose_mutator()
         unlocked = meta.get("unlocked_classes", ["adventurer"])
@@ -92,14 +127,226 @@ class DorkTkApp:
             interface_mode="ui",
         )
 
+    def _build_player_from_save(self, saved):
+        locs = [
+            SimpleNamespace(
+                ID=row["id"],
+                N=row["n"],
+                S=row["s"],
+                E=row["e"],
+                W=row["w"],
+                IsDark=row.get("is_dark", 0),
+                Story=row["story"],
+                Desc=row["desc"],
+                ObjectID=row["object_id"],
+                NpcID=row.get("npc_id", 0),
+                Tag=row.get("tag", "safe"),
+                EventResolved=row.get("event_resolved", False),
+                SecretSolved=row.get("secret_solved", False),
+            )
+            for row in saved.get("locs", [])
+        ]
+        objs = [
+            SimpleNamespace(
+                ID=row["id"],
+                Name=row["name"],
+                Desc=row["desc"],
+                Story=row.get("story", ""),
+                RequiredToWin=row.get("required_to_win", ""),
+            )
+            for row in saved.get("objs", [])
+        ]
+        npcs = [
+            SimpleNamespace(
+                ID=row["id"],
+                Name=row["name"],
+                Desc=row["desc"],
+                ObjectID=row["object_id"],
+                CanMove=row.get("can_move", ""),
+                StartLocationID=row.get("start_loc", 0),
+                CurrentLocationID=row.get("current_loc", 0),
+                Hostile=row.get("hostile", True),
+                Patrol=list(row.get("patrol", [])),
+                IsBoss=row.get("is_boss", False),
+                HP=row.get("hp", 40),
+                MaxHP=row.get("max_hp", 40),
+                Phase=row.get("phase", 1),
+                Telegraph=row.get("telegraph"),
+            )
+            for row in saved.get("npcs", [])
+        ]
+        meta = saved.get("meta") or core.load_meta(self.meta_path)
+        mutator = saved.get("mutator") or core.choose_mutator()
+        player_class = saved.get("player_class", meta.get("last_class", "adventurer"))
+
+        player = core.Player(
+            locs,
+            objs,
+            npcs,
+            meta=meta,
+            meta_path=self.meta_path,
+            mutator=mutator,
+            player_class=player_class,
+            input_func=self._game_input,
+            output_func=self._game_output,
+            show_ascii_minimap=False,
+            interface_mode="ui",
+        )
+
+        state = saved.get("player", {})
+        player.backpack = list(state.get("backpack", player.backpack))
+        player.current_loc = state.get("current_loc", player.current_loc)
+        player.previous_loc = state.get("previous_loc", player.previous_loc)
+        player.health = state.get("health", player.health)
+        player.max_health = state.get("max_health", player.max_health)
+        player.game_over = state.get("game_over", False)
+        player.new_location = state.get("new_location", True)
+        player.told_story = state.get("told_story", False)
+        player.xp = state.get("xp", 0)
+        player.perks = dict(state.get("perks", player.perks))
+        player.map_boost_active = state.get("map_boost_active", False)
+        player.lore_seen = set(state.get("lore_seen", []))
+        player.defeated_npcs = set(state.get("defeated_npcs", []))
+        player.combat_log = list(state.get("combat_log", []))
+        player.reputation = dict(state.get("reputation", player.reputation))
+        player.revealed_rooms = set(state.get("revealed_rooms", [player.current_loc]))
+        player.hunter_awake = state.get("hunter_awake", False)
+        player.timed_block = dict(state.get("timed_block", player.timed_block))
+        player.turn_count = state.get("turn_count", 0)
+        player.required_artifacts = set(state.get("required_artifacts", [2, 3, 4]))
+        player.quests = list(state.get("quests", player.quests))
+
+        player.loc_by_id = {l.ID: l for l in player.locs}
+        player.obj_by_id = {o.ID: o for o in player.objs}
+        player.npc_by_id = {n.ID: n for n in player.npcs}
+        pending_id = state.get("pending_encounter_id")
+        player.pending_encounter = player.npc_by_id.get(pending_id) if pending_id is not None else None
+        return player
+
+    def _read_save_slot(self):
+        if not self.save_path.exists():
+            return None
+        try:
+            with open(self.save_path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _save_game_slot(self):
+        if not hasattr(self, "player"):
+            return
+        player = self.player
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+        payload = {
+            "version": 1,
+            "player_class": player.player_class,
+            "mutator": player.mutator,
+            "meta": player.meta,
+            "player": {
+                "backpack": list(player.backpack),
+                "current_loc": player.current_loc,
+                "previous_loc": player.previous_loc,
+                "health": player.health,
+                "max_health": player.max_health,
+                "game_over": player.game_over,
+                "new_location": player.new_location,
+                "told_story": player.told_story,
+                "xp": player.xp,
+                "perks": dict(player.perks),
+                "map_boost_active": player.map_boost_active,
+                "lore_seen": sorted(player.lore_seen),
+                "defeated_npcs": sorted(player.defeated_npcs),
+                "combat_log": list(player.combat_log),
+                "reputation": dict(player.reputation),
+                "revealed_rooms": sorted(player.revealed_rooms),
+                "hunter_awake": player.hunter_awake,
+                "timed_block": dict(player.timed_block),
+                "turn_count": player.turn_count,
+                "required_artifacts": sorted(player.required_artifacts),
+                "quests": list(player.quests),
+                "pending_encounter_id": player.pending_encounter.ID if player.pending_encounter else None,
+            },
+            "locs": [
+                {
+                    "id": loc.ID,
+                    "n": loc.N,
+                    "s": loc.S,
+                    "e": loc.E,
+                    "w": loc.W,
+                    "is_dark": getattr(loc, "IsDark", 0),
+                    "story": loc.Story,
+                    "desc": loc.Desc,
+                    "object_id": loc.ObjectID,
+                    "npc_id": getattr(loc, "NpcID", 0),
+                    "tag": getattr(loc, "Tag", "safe"),
+                    "event_resolved": getattr(loc, "EventResolved", False),
+                    "secret_solved": getattr(loc, "SecretSolved", False),
+                }
+                for loc in player.locs
+            ],
+            "objs": [
+                {
+                    "id": obj.ID,
+                    "name": obj.Name,
+                    "desc": obj.Desc,
+                    "story": getattr(obj, "Story", ""),
+                    "required_to_win": getattr(obj, "RequiredToWin", ""),
+                }
+                for obj in player.objs
+            ],
+            "npcs": [
+                {
+                    "id": npc.ID,
+                    "name": npc.Name,
+                    "desc": npc.Desc,
+                    "object_id": npc.ObjectID,
+                    "can_move": getattr(npc, "CanMove", ""),
+                    "start_loc": getattr(npc, "StartLocationID", 0),
+                    "current_loc": getattr(npc, "CurrentLocationID", 0),
+                    "hostile": getattr(npc, "Hostile", True),
+                    "patrol": list(getattr(npc, "Patrol", [])),
+                    "is_boss": getattr(npc, "IsBoss", False),
+                    "hp": getattr(npc, "HP", 40),
+                    "max_hp": getattr(npc, "MaxHP", 40),
+                    "phase": getattr(npc, "Phase", 1),
+                    "telegraph": getattr(npc, "Telegraph", None),
+                }
+                for npc in player.npcs
+            ],
+        }
+        try:
+            with open(self.save_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+        except OSError:
+            pass
+
+    def _clear_save_slot(self):
+        try:
+            if self.save_path.exists():
+                self.save_path.unlink()
+        except OSError:
+            pass
+
     def _build_ui(self):
-        self.root.columnconfigure(0, weight=2)
-        self.root.columnconfigure(1, weight=3)
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("TFrame", background=self.theme["panel"])
+        style.configure("TLabel", background=self.theme["panel"], foreground=self.theme["text"], font=self.ui_font)
+        style.configure("TLabelframe", background=self.theme["panel"], foreground=self.theme["text"])
+        style.configure("TLabelframe.Label", background=self.theme["panel"], foreground=self.theme["text"], font=self.button_font)
+        style.configure("TButton", font=self.button_font, padding=(10, 6))
+        style.configure("TEntry", fieldbackground="#f4efe5", foreground=self.theme["text"])
+
+        self.root.columnconfigure(0, weight=0, minsize=520)
+        self.root.columnconfigure(1, weight=1, minsize=720)
         self.root.rowconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=0)
 
-        left = ttk.Frame(self.root, padding=8)
-        right = ttk.Frame(self.root, padding=8)
+        left = ttk.Frame(self.root, padding=14)
+        right = ttk.Frame(self.root, padding=14)
         left.grid(row=0, column=0, sticky="nsew")
         right.grid(row=0, column=1, sticky="nsew")
         left.rowconfigure(1, weight=1)
@@ -107,27 +354,43 @@ class DorkTkApp:
         right.rowconfigure(2, weight=1)
         right.columnconfigure(0, weight=1)
 
-        ttk.Label(left, text="Map View", font=("Helvetica", 13, "bold")).grid(row=0, column=0, sticky="w")
-        self.canvas = tk.Canvas(left, width=420, height=420, bg="#2b2216", highlightthickness=0)
+        ttk.Label(left, text="Dungeon Map", font=self.title_font).grid(row=0, column=0, sticky="w")
+        self.canvas = tk.Canvas(left, width=500, height=500, bg=self.theme["map_bg"], highlightthickness=0)
         self.canvas.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
         self.canvas.bind("<Configure>", lambda _event: self._draw_minimap())
         self.legend_var = tk.StringVar(value="")
-        ttk.Label(left, textvariable=self.legend_var, wraplength=400, justify="left").grid(
-            row=2, column=0, sticky="w", pady=(8, 0)
+        ttk.Label(left, textvariable=self.legend_var, wraplength=500, justify="left").grid(
+            row=2, column=0, sticky="w", pady=(12, 0)
         )
 
         status_frame = ttk.Frame(right)
-        status_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        status_frame.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         status_frame.columnconfigure(0, weight=1)
         self.status_var = tk.StringVar(value="")
-        ttk.Label(status_frame, textvariable=self.status_var, justify="left").grid(row=0, column=0, sticky="w")
+        ttk.Label(status_frame, textvariable=self.status_var, justify="left", font=("Palatino", 16)).grid(
+            row=0, column=0, sticky="w"
+        )
         self.room_hint_var = tk.StringVar(value="")
-        ttk.Label(status_frame, textvariable=self.room_hint_var, justify="left").grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Label(status_frame, textvariable=self.room_hint_var, justify="left", font=("Palatino", 14)).grid(
+            row=1, column=0, sticky="w", pady=(3, 0)
+        )
 
-        self.log = scrolledtext.ScrolledText(right, wrap="word", height=20, state="disabled")
-        self.log.grid(row=1, column=0, sticky="nsew", pady=(8, 8))
+        self.log = scrolledtext.ScrolledText(
+            right,
+            wrap="word",
+            height=18,
+            state="disabled",
+            font=self.mono_font,
+            background="#f4efe5",
+            foreground=self.theme["text"],
+            insertbackground=self.theme["text"],
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+        )
+        self.log.grid(row=1, column=0, sticky="nsew", pady=(10, 10))
         self.log.tag_configure("user", foreground="#2fbf71")
-        self.log.tag_configure("system", foreground="#000000")
+        self.log.tag_configure("system", foreground="#1f170f")
 
         inv_frame = ttk.LabelFrame(right, text="Inventory", padding=8)
         inv_frame.grid(row=2, column=0, sticky="nsew")
@@ -135,36 +398,29 @@ class DorkTkApp:
         self.inventory_var = tk.StringVar(value="")
         ttk.Label(inv_frame, textvariable=self.inventory_var, justify="left").grid(row=0, column=0, sticky="w")
 
-        bottom = ttk.Frame(self.root, padding=8)
+        bottom = ttk.Frame(self.root, padding=12)
         bottom.grid(row=1, column=0, columnspan=2, sticky="ew")
         bottom.columnconfigure(0, weight=1)
-        self.command_entry = ttk.Entry(bottom)
-        self.command_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        self.command_entry.bind("<Return>", self._on_submit)
-        ttk.Button(bottom, text="Send", command=self._on_submit).grid(row=0, column=1, padx=(0, 6))
-        ttk.Button(bottom, text="Help", command=lambda: self._send_command("help")).grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(bottom, text="Status", command=lambda: self._send_command("status")).grid(
-            row=0, column=3, padx=(0, 6)
-        )
-        ttk.Button(bottom, text="Inventory", command=lambda: self._send_command("inventory")).grid(
-            row=0, column=4, padx=(0, 6)
-        )
-        ttk.Button(bottom, text="Map", command=lambda: self._send_command("map")).grid(row=0, column=5)
-        self.emoji_toggle_btn = ttk.Button(bottom, text="Emoji: On", command=self._toggle_emoji_theme)
-        self.emoji_toggle_btn.grid(row=0, column=6, padx=(0, 6))
+
+        utility_row = ttk.Frame(bottom)
+        utility_row.grid(row=0, column=0, pady=(0, 10))
+        ttk.Button(utility_row, text="Help", command=lambda: self._send_command("help")).grid(row=0, column=0, padx=(0, 10))
+        ttk.Button(utility_row, text="Avatar", command=self._choose_avatar).grid(row=0, column=1, padx=(0, 10))
+        self.emoji_toggle_btn = ttk.Button(utility_row, text="Emoji: On", command=self._toggle_emoji_theme)
+        self.emoji_toggle_btn.grid(row=0, column=2, padx=(0, 10))
         voice_text = self._voice_button_text()
         self.voice_toggle_btn = ttk.Button(
-            bottom,
+            utility_row,
             text=voice_text,
             command=self._toggle_voice,
             state=("normal" if self.voice_available else "disabled"),
         )
-        self.voice_toggle_btn.grid(row=0, column=7, padx=(0, 6))
+        self.voice_toggle_btn.grid(row=0, column=3, padx=(0, 0))
 
-        action_frame = ttk.LabelFrame(bottom, text="Actions", padding=6)
-        action_frame.grid(row=1, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        action_frame = ttk.LabelFrame(bottom, text="Actions", padding=8)
+        action_frame.grid(row=1, column=0, pady=(0, 0))
         for col in range(8):
-            action_frame.columnconfigure(col, weight=1)
+            action_frame.columnconfigure(col, minsize=152)
 
         self.action_buttons = {}
         action_defs = [
@@ -197,13 +453,12 @@ class DorkTkApp:
                 highlightthickness=1,
                 highlightbackground="#8f8f8f",
                 activebackground="#f7f7f7",
-                padx=6,
-                pady=4,
+                font=self.button_font,
+                padx=8,
+                pady=6,
             )
-            btn.grid(row=idx // 8, column=idx % 8, padx=2, pady=2, sticky="ew")
+            btn.grid(row=idx // 8, column=idx % 8, padx=3, pady=3, sticky="ew")
             self.action_buttons[key] = btn
-
-        self.command_entry.focus_set()
 
     def _strip_ansi(self, text: str) -> str:
         return ANSI_RE.sub("", text)
@@ -277,10 +532,10 @@ class DorkTkApp:
             return "🧱"
         return token
 
-    def _player_avatar_emoji(self, player_class: str) -> str:
+    def _default_avatar_emoji(self, player_class: str) -> str:
         role = (player_class or "").strip().lower()
         role_map = {
-            "adventurer": random.choice(["👨", "👩"]),
+            "adventurer": "👨",
             "fighter": "🛡️",
             "scout": "🏹",
             "scholar": "📚",
@@ -294,6 +549,80 @@ class DorkTkApp:
             "bard": "🎵",
         }
         return role_map.get(role, "🙂")
+
+    def _choose_avatar(self):
+        current = self.player_avatar
+        choices = [
+            ("👨", "Male"),
+            ("👩", "Female"),
+            ("🧙", "Wizard"),
+            ("🧟", "Zombie"),
+            ("🥷", "Ninja"),
+            ("🧛", "Vampire"),
+            ("🤖", "Robot"),
+            ("👻", "Ghost"),
+            ("🐱", "Cat"),
+            ("🐶", "Dog"),
+            ("🐺", "Wolf"),
+            ("🐉", "Dragon"),
+            ("🧌", "Troll"),
+            ("🙂", "Classic"),
+        ]
+
+        picker = tk.Toplevel(self.root)
+        picker.title("Choose Avatar")
+        picker.configure(bg=self.theme["panel"])
+        picker.resizable(False, False)
+        picker.transient(self.root)
+        picker.grab_set()
+
+        ttk.Label(
+            picker,
+            text="Pick your avatar",
+            font=self.title_font,
+            background=self.theme["panel"],
+            foreground=self.theme["text"],
+        ).grid(row=0, column=0, columnspan=4, pady=(12, 8), padx=12)
+
+        selected = {"emoji": current}
+
+        def select_emoji(value: str):
+            selected["emoji"] = value
+            picker.destroy()
+
+        for idx, (emoji, label) in enumerate(choices):
+            r = (idx // 4) + 1
+            c = idx % 4
+            btn = tk.Button(
+                picker,
+                text=f"{emoji} {label}",
+                font=self.button_font,
+                command=lambda v=emoji: select_emoji(v),
+                bg="#f4efe5",
+                fg=self.theme["text"],
+                activebackground="#efe5d0",
+                padx=10,
+                pady=8,
+                bd=1,
+                relief=tk.RAISED,
+            )
+            btn.grid(row=r, column=c, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(picker, text="Cancel", command=picker.destroy).grid(
+            row=5, column=0, columnspan=4, pady=(8, 12)
+        )
+
+        for col in range(4):
+            picker.columnconfigure(col, weight=1)
+
+        picker.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (picker.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (picker.winfo_height() // 2)
+        picker.geometry(f"+{x}+{y}")
+        self.root.wait_window(picker)
+
+        self.player_avatar = selected["emoji"]
+        self.refresh_views()
 
     def _toggle_emoji_theme(self):
         self.emoji_theme = not self.emoji_theme
@@ -335,6 +664,11 @@ class DorkTkApp:
         if cleaned.startswith("[UI]"):
             return
         if cleaned.startswith("Chronicle:") or cleaned.startswith("📜 Chronicle:"):
+            return
+        # Keep speech immersive by removing parenthetical metadata/instructions.
+        cleaned = re.sub(r"\([^)]*\)", "", cleaned)
+        cleaned = " ".join(cleaned.split())
+        if not cleaned:
             return
         if len(cleaned) > 220:
             cleaned = cleaned[:220]
@@ -434,13 +768,6 @@ class DorkTkApp:
         answer = simpledialog.askstring("Input Needed", prompt, parent=self.root)
         return (answer or "").strip()
 
-    def _on_submit(self, _event=None):
-        text = self.command_entry.get().strip()
-        if not text:
-            return
-        self.command_entry.delete(0, "end")
-        self._send_command(text)
-
     def _prompt_and_send(self, title: str, prompt: str, prefix: str):
         answer = simpledialog.askstring(title, prompt, parent=self.root)
         if answer is None:
@@ -513,14 +840,20 @@ class DorkTkApp:
         self.refresh_views()
 
         if self.player.game_over:
+            self._clear_save_slot()
             self._shutdown()
+        else:
+            self._save_game_slot()
 
     def _shutdown(self):
         if self.closing:
             return
         self.closing = True
-        if hasattr(self, "player") and not self.player.game_over:
-            self.player.quit_game()
+        if hasattr(self, "player"):
+            if self.player.game_over:
+                self._clear_save_slot()
+            else:
+                self._save_game_slot()
         try:
             self.voice_queue.put(None)
         except Exception:
@@ -723,12 +1056,12 @@ class DorkTkApp:
         x2 = cx + size
         y2 = cy + size
         color = {
-            "@": "#2fbf71",
-            "!": "#d64545",
-            "*": "#e0b437",
-            ".": "#4f7fd8",
-            "?": "#5d6d7a",
-            "#": "#273043",
+            "@": "#4c7b4a",
+            "!": "#8f3e32",
+            "*": "#9b7a2f",
+            ".": "#6a7a8e",
+            "?": "#6f6458",
+            "#": "#3b332a",
         }[token]
         self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="#dbe5f0", width=2)
         if token == "#":
@@ -776,20 +1109,20 @@ class DorkTkApp:
         self.canvas.delete("all")
         loc = self.player.location()
         blocked = self.player.get_blocked_direction()
-        width = max(self.canvas.winfo_width(), 420)
-        height = max(self.canvas.winfo_height(), 420)
+        width = max(self.canvas.winfo_width(), 500)
+        height = max(self.canvas.winfo_height(), 500)
 
         hpad = 24
-        top_pad = 34
-        bottom_pad = 46
-        gap_between_tiles = 10
+        top_pad = 30
+        bottom_pad = 36
+        gap_between_tiles = 8
         tile_half = int(
             min(
                 (width - (hpad * 2) - (gap_between_tiles * 2)) / 6,
                 (height - top_pad - bottom_pad - (gap_between_tiles * 2)) / 6,
             )
         )
-        tile_half = max(34, min(tile_half, 88))
+        tile_half = max(30, min(tile_half, 70))
         center_spacing = (tile_half * 2) + gap_between_tiles
         cx = (width // 2) + self.map_x_offset
         cy = (height - bottom_pad + top_pad) // 2
