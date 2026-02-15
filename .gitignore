@@ -1,1 +1,4 @@
 .space
+__pycache__/
+*.pyc
+src/data/meta.json

@@ -1,6 +1,6 @@
 # The Dungeons of Dork
 
-This game was originally written as a ManyChat chatbot as part of a training class I ran teaching how to code old-school text RPGs. This project is the object-oriented Python 3 CLI edition.
+This game was originally written as a ManyChat chatbot as part of a training class I ran teaching how to code old-school text RPGs. This project is the object-oriented Python 3 edition with a Tkinter UI.
 
 ## Current Gameplay Overview
 
@@ -16,6 +16,12 @@ The game loads base world data from CSV files in `src/data/`, then builds a run 
 - Class-specific abilities (`fighter`, `scout`, `scholar`) unlocked via wins
 - Run mutators (for example `Ironman`, `Fog of War`, `Rich Vaults`)
 - Meta progression stored in `src/data/meta.json`
+- Tkinter UI with a drawn map view, command entry, log panel, and inventory panel
+- Tkinter action strip with state-aware buttons (movement, exploration, and combat actions)
+- Tkinter item emojis in inventory and visible room tiles for faster visual scanning
+- Tkinter player avatar emoji (class-based, with male/female fallback for adventurer)
+- Tkinter emoji theme toggle (`Emoji: On/Off`) for map symbols, action labels, status line, and chronicle style
+- Tkinter voice feedback toggle (`Voice: On/Off`) for spoken system messages (macOS `say`)
 
 ## Running The Game
 
@@ -45,6 +51,8 @@ Each turn generally follows this flow:
    - timed event spawn/check
    - NPC movement
    - ongoing effects (for example Cursed Idol drain)
+
+The UI log is concise and panel-driven (map/status/inventory are shown visually), and uses a `Chronicle:` summary line after actions to highlight changes.
 
 ## Commands
 
@@ -83,6 +91,32 @@ Combat:
 Class utility:
 
 - `scan` (scout)
+
+Tkinter map legend:
+
+- `@` you
+- `!` hostile
+- `*` item present
+- `.` explored room
+- `?` unknown room
+- unavailable directions are not drawn
+
+## Tkinter Controls
+
+The Tkinter client includes:
+
+- command entry for free-form commands
+- quick buttons (`Help`, `Status`, `Inventory`, `Map`)
+- a state-aware action strip for movement, exploration, and combat
+- an emoji theme toggle button to switch between classic and emoji-heavy UI styles
+- a voice toggle button to speak system feedback (when available)
+
+Action strip behavior:
+
+- movement buttons enable only when that direction is valid (and not blocked)
+- combat buttons (`Attack`, `Flee`, class combat actions) enable only during encounters
+- class-specific buttons (`Powerstrike`, `Analyze`, `Scan`) enable only when relevant to your class/state
+- prompt-driven actions (`Pickup`, `Drop`, `Use`, `Rune`) open a small input dialog
 
 ## Winning and Endings
 

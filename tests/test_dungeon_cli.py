@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import importlib.util
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "src" / "DunDork.py"
-SPEC = importlib.util.spec_from_file_location("DunDork", MODULE_PATH)
+MODULE_PATH = Path(__file__).resolve().parents[1] / "src" / "DunDorkCore.py"
+SPEC = importlib.util.spec_from_file_location("DunDorkCore", MODULE_PATH)
 DunDork = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DunDork)
 
@@ -134,3 +134,74 @@ def test_powerstrike_uses_high_damage_for_non_boss():
 
     assert result is True
     assert npc.HP == 16
+
+
+def test_attack_without_weakness_still_damages_enemy():
+    player = make_player()
+    npc = player.npcs[0]
+    npc.ObjectID = 99  # weakness item player does not carry
+    npc.CurrentLocationID = player.current_loc
+    player.pending_encounter = npc
+
+    result = player.resolve_attack()
+
+    assert result is True
+    assert npc.HP == 28
+    assert player.health == 92
+
+
+def test_attack_can_defeat_enemy_without_weakness():
+    player = make_player()
+    npc = player.npcs[0]
+    npc.ObjectID = 99
+    npc.CurrentLocationID = player.current_loc
+    npc.HP = 10
+    player.pending_encounter = npc
+
+    result = player.resolve_attack()
+
+    assert result is True
+    assert player.pending_encounter is None
+    assert npc.ID in player.defeated_npcs
+
+
+def test_boss_telegraph_lethal_damage_ends_game_without_extra_input(monkeypatch):
+    player = make_player()
+    boss = SimpleNamespace(
+        ID=999,
+        Name="Arch-Dork",
+        Desc="boss",
+        ObjectID=0,
+        CurrentLocationID=player.current_loc,
+        Hostile=True,
+        IsBoss=True,
+        HP=120,
+        MaxHP=120,
+        Phase=1,
+        Telegraph={"name": "Cataclysmic Arc", "damage": 16},
+        Patrol=[],
+    )
+    player.pending_encounter = boss
+    player.health = 10
+
+    def fail_input(_):
+        raise AssertionError("combat input should not be requested after lethal damage")
+
+    monkeypatch.setattr("builtins.input", fail_input)
+    player.handle_encounter_turn()
+
+    assert player.game_over is True
+    assert player.health <= 0
+
+
+def test_quit_works_during_combat(monkeypatch):
+    player = make_player()
+    npc = player.npcs[0]
+    npc.CurrentLocationID = player.current_loc
+    player.pending_encounter = npc
+    responses = iter(["q", "y"])
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+
+    player.handle_encounter_turn()
+
+    assert player.game_over is True
